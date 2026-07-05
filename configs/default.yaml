@@ -1,0 +1,71 @@
+# Default configuration for rl-hedging-engine
+# Override any field via CLI: --cfg.key=value
+
+# ── Environment ────────────────────────────────────────────────────────
+env:
+  spot: 100.0          # initial underlying price
+  strike: 100.0        # option strike price
+  maturity: 0.25       # time to maturity in years (T)
+  vol: 0.2             # annualised volatility (sigma)
+  rate: 0.0            # risk-free rate
+  n_steps: 50          # hedging steps per episode
+  cost_multiplier: 0.001  # proportional transaction cost
+  reward_type: pnl     # pnl | variance_penalised
+  variance_penalty: 0.1
+
+# ── Simulation ─────────────────────────────────────────────────────────
+simulation:
+  model: gbm           # gbm (more models to follow)
+  seed: 42
+
+# ── PPO ────────────────────────────────────────────────────────────────
+ppo:
+  obs_dim: 6
+  act_dim: 1
+  act_limit: 1.0
+  hidden_sizes: [256, 256]
+  actor_lr: 3.0e-4
+  critic_lr: 3.0e-4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  n_epochs: 10
+  n_steps: 2048
+  batch_size: 64
+  device: cpu
+
+# ── TD3 ────────────────────────────────────────────────────────────────
+td3:
+  obs_dim: 6
+  act_dim: 1
+  act_limit: 1.0
+  hidden_sizes: [256, 256]
+  actor_lr: 1.0e-3
+  critic_lr: 1.0e-3
+  gamma: 0.99
+  tau: 0.005
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_delay: 2
+  batch_size: 256
+  device: cpu
+
+# ── Training ───────────────────────────────────────────────────────────
+training:
+  algorithm: ppo       # ppo | td3
+  total_episodes: 1000
+  replay_capacity: 100000  # TD3 only
+  warmup_steps: 1000       # TD3 only
+  exploration_noise: 0.1   # TD3 only
+  log_dir: runs/default
+  save_dir: checkpoints/default
+  save_freq: 100
+
+# ── Evaluation ─────────────────────────────────────────────────────────
+evaluation:
+  n_episodes: 200
+  seed: 0
+  checkpoint: null     # path to .pt file; null = random weights
