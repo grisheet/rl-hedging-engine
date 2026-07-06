@@ -1,0 +1,84 @@
+# =============================================================================
+# rl-hedging-engine — Docker Compose
+# Provides three services:
+#   train     — runs a full training run and persists checkpoints
+#   evaluate  — loads a checkpoint and prints evaluation metrics
+#   tensorboard — serves TensorBoard logs on localhost:6006
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Training service
+  # ---------------------------------------------------------------------------
+  train:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: rl-hedging-engine:latest
+    container_name: rl-hedging-train
+    command:
+      - python
+      - scripts/train.py
+      - --config
+      - configs/default.yaml
+    volumes:
+      # Persist checkpoints and logs between runs
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+      - ./results:/app/results
+      # Hot-reload config without rebuilding
+      - ./configs:/app/configs:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Evaluation service
+  # ---------------------------------------------------------------------------
+  evaluate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: rl-hedging-engine:latest
+    container_name: rl-hedging-evaluate
+    command:
+      - python
+      - scripts/evaluate.py
+      - --config
+      - configs/default.yaml
+      - --checkpoint
+      - /app/checkpoints/td3_final.pt
+      - --n_episodes
+      - "20"
+    volumes:
+      - ./checkpoints:/app/checkpoints:ro
+      - ./results:/app/results
+      - ./configs:/app/configs:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - train
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # TensorBoard
+  # ---------------------------------------------------------------------------
+  tensorboard:
+    image: tensorflow/tensorflow:2.17.0
+    container_name: rl-hedging-tensorboard
+    command: tensorboard --logdir /logs --host 0.0.0.0 --port 6006
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./logs:/logs:ro
+    restart: unless-stopped
+
+volumes:
+  checkpoints:
+  logs:
+  results:
