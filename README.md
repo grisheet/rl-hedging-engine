@@ -1,28 +1,39 @@
 # rl-hedging-engine
 
-> **RL-based Derivatives Hedging Engine** — simulation-first, research-grade Python repo for dynamic option hedging under market frictions.
+> **RL-based Derivatives Hedging Engine** — a simulation-first, research-grade Python framework for dynamic option hedging under realistic market frictions.
 
+[![CI](https://github.com/grisheet/rl-hedging-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/grisheet/rl-hedging-engine/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 
 ---
 
+## Abstract
+
+Discrete Black-Scholes delta hedging is the textbook solution to European option replication — but it assumes frictionless markets, continuous rebalancing, and perfect volatility knowledge. In practice, transaction costs, finite rebalancing frequencies, and model uncertainty erode its effectiveness substantially.
+
+This project investigates whether **deep reinforcement learning agents** (PPO and TD3) can learn superior hedging policies directly from simulated market paths. The environment models a short European call position under Geometric Brownian Motion dynamics with proportional transaction costs, bid-ask spread, and discrete daily rebalancing. Agents observe the option's current delta, moneyness, time-to-expiry, and recent P&L, and output a continuous hedge ratio that minimises a risk-adjusted reward penalising both P&L variance and transaction cost drag.
+
+The codebase is intentionally self-contained — no Stable Baselines3, no Ray RLlib. Every component (GBM simulator, Black-Scholes pricer, actor-critic networks, replay buffer, GAE advantage estimation) is implemented from scratch in PyTorch, making the internal mechanics fully auditable and modifiable by quant researchers and ML practitioners alike.
+
+---
+
 ## Overview
 
-This repo answers a concrete research question: **can an RL agent hedge a European option better than discrete Black-Scholes delta hedging once market frictions are present?**
+The central research question: **can an RL agent hedge a European option better than discrete Black-Scholes delta hedging once market frictions are present?**
 
 The stack:
 - **Gymnasium environment** simulating a short option position under GBM with transaction costs and bid-ask spread
-- **Classical baselines** — no-hedge and Black-Scholes delta hedge (closed-form, vectorized)
+- **Classical baselines** — no-hedge and Black-Scholes delta hedge (closed-form, vectorised)
 - **Custom PyTorch implementations** of PPO (on-policy) and TD3 (off-policy) — fully inspectable, no library black-boxes
 - **Self-financing ledger accounting** — PnL computed as a testable identity, not ad hoc
 - **Evaluation pipeline** — common-random-numbers backtesting, CVaR, drawdown, paired confidence intervals
 - **Config-driven** — every experiment reproducible from a single YAML file
 
-This sits in the **deep hedging literature** (Buehler et al. 2019, Kolm & Ritter 2019, Cao-Chen-Hull-Poulos 2021) and borrows their best design patterns.
-
 > **Key insight**: under frictionless GBM with the correct volatility, discrete delta hedging is already near-optimal. RL earns its keep when frictions bite. The headline experiments are **cost sweeps (0, 10, 50 bps)** — the frictionless case is a validation gate, not the research result.
+
+This sits in the **deep hedging literature** (Buehler et al. 2019, Kolm & Ritter 2019, Cao-Chen-Hull-Poulos 2021) and borrows their best design patterns.
 
 ---
 
@@ -30,197 +41,157 @@ This sits in the **deep hedging literature** (Buehler et al. 2019, Kolm & Ritter
 
 ```
 rl-hedging-engine/
-├── pyproject.toml          # deps, ruff/mypy/pytest config
-├── README.md
-├── .gitignore
-├── .python-version         # 3.11
-│
+├── .github/workflows/ci.yml  # GitHub Actions: lint, test, Docker build
 ├── configs/
-│   ├── env/
-│   │   ├── gbm_call_frictionless.yaml
-│   │   ├── gbm_call_10bp.yaml
-│   │   └── gbm_call_50bp.yaml
-│   ├── agent/
-│   │   ├── ppo_default.yaml
-│   │   └── td3_default.yaml
-│   └── experiment/
-│       ├── ppo_vs_baselines.yaml
-│       └── cost_sweep.yaml
-│
-├── src/rlhedge/
-│   ├── __init__.py
-│   ├── types.py            # shared type aliases
-│   ├── pricing/
-│   │   ├── __init__.py
-│   │   ├── blackscholes.py # closed-form BS price, delta, gamma, vega, theta
-│   │   └── payoffs.py      # terminal payoff functions
-│   ├── simulation/
-│   │   ├── __init__.py
-│   │   └── gbm.py          # exact GBM path simulation (P-measure)
-│   ├── envs/
-│   │   ├── __init__.py
-│   │   ├── config.py       # frozen dataclass env config
-│   │   ├── ledger.py       # self-financing cash accounting
-│   │   ├── costs.py        # transaction cost models
-│   │   ├── rewards.py      # reward shaping variants
-│   │   └── hedging_env.py  # Gymnasium HedgingEnv
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── baselines.py    # NoHedge, BSDelta (Policy protocol)
-│   │   ├── networks.py     # shared MLP builder
-│   │   ├── ppo.py          # PPO from scratch
-│   │   └── td3.py          # TD3 from scratch (DDPG as ablation)
-│   ├── training/
-│   │   ├── __init__.py
-│   │   ├── rollout_buffer.py
-│   │   ├── replay_buffer.py
-│   │   └── logger.py
-│   └── evaluation/
-│       ├── __init__.py
-│       ├── backtest.py     # CRN backtester
-│       ├── metrics.py      # CVaR, drawdown, Sharpe, turnover
-│       └── plots.py        # PnL distributions, hedge paths, cost-risk frontier
-│
+│   └── default.yaml            # Single source of truth for all hyperparameters
 ├── scripts/
-│   ├── run_env_sanity.py   # gymnasium.utils.env_checker + deterministic checks
-│   ├── run_baselines.py    # benchmark no-hedge and delta-hedge
-│   ├── train_ppo.py
-│   ├── train_td3.py
-│   └── run_benchmark.py    # full evaluation suite
-│
-├── tests/
-│   ├── test_blackscholes.py
-│   ├── test_gbm.py
-│   ├── test_ledger.py
-│   ├── test_hedging_env.py
-│   ├── test_baselines.py
-│   └── test_metrics.py
-│
-├── notebooks/
-│   └── 01_env_sanity_checks.ipynb
-│
-└── outputs/               # gitignored: figures/, models/, logs/, reports/
+│   ├── train.py                # Training entry-point (PPO or TD3)
+│   └── evaluate.py             # Evaluation entry-point with metric reporting
+├── src/rlhedge/
+│   ├── pricing/                # Black-Scholes pricer + Greeks (vectorised)
+│   ├── simulation/             # GBM path simulator
+│   ├── envs/                   # Gymnasium HedgingEnv
+│   ├── models/                 # PPO + TD3 agents (pure PyTorch)
+│   ├── training/               # Trainers, replay buffer, rollout collector
+│   └── evaluation/             # Metrics, visualisation, backtesting
+├── tests/                      # pytest suite (pricing, env, models)
+├── Dockerfile                  # Multi-stage production image
+├── docker-compose.yml          # Train + evaluate + TensorBoard services
+├── pyproject.toml              # Build config, ruff, mypy, pytest settings
+├── requirements.txt            # Pinned runtime dependencies
+└── LICENSE                     # MIT
 ```
-
----
-
-## Design Decisions
-
-### P-measure vs Q-measure separation
-The **simulator** (`simulation/gbm.py`) uses the real-world drift μ (P-measure). The **pricer** (`pricing/blackscholes.py`) uses the risk-free rate r (Q-measure). These are kept in separate packages to make it structurally impossible to confuse them — and to enable future misspecification experiments (e.g., BS-pricing agent in a Heston world) without touching either layer.
-
-### Self-financing ledger
-At t=0 the agent sells the option and receives the BS premium into cash. Portfolio value:
-```
-V(t) = cash(t) + h(t)·S(t) - notional·C(t)
-```
-where `C(t)` is BS mid-price during the episode and intrinsic payoff at maturity. Each step: (1) trade executes, cash pays notional + costs; (2) spot advances, cash accrues at r·dt; (3) option re-marks; (4) step PnL = ΔV. A unit test verifies `V(T) = Σ step_PnL` to machine precision.
-
-### Action space
-Default: **trade increment** (hedge adjustment). The executed hedge position is `h(t) = h(t-1) + action·max_trade`. Transaction costs fall out directly from `|action|`. A `target` mode (desired position) is available behind a config flag — useful for comparing to the deep hedging literature which often uses target actions.
-
-### Reward
-Default: **mean-variance** proxy
-```
-r(t) = ΔV(t) - κ · ΔV(t)²   (normalized by S₀·σ·√dt)
-```
-True episode-level CVaR is computed at evaluation time only — not as a training reward, which would require a distributional critic (deferred to the extension backlog). This matches the Kolm & Ritter (2019) approach.
-
-### Agent implementations
-- **PPO**: Gaussian policy (tanh-squashed mean, learned log-std), separate critic, GAE(λ), advantage normalization, clipped surrogate objective
-- **TD3**: Deterministic actor, twin critics, delayed policy updates, target-policy smoothing. DDPG falls out as a TD3 config ablation (disable twin critics and smoothing).
-- Both implement the `PolicyProtocol` so the backtester is strategy-agnostic.
-
-### Common Random Numbers
-All strategies are evaluated on **identical path sets** (fixed eval seed, disjoint from training seeds). This enables paired comparisons with tighter confidence intervals than independent sampling.
 
 ---
 
 ## Quick Start
 
+### Option A — Local (pip)
+
 ```bash
-# Install
+# Clone
+git clone https://github.com/grisheet/rl-hedging-engine.git
+cd rl-hedging-engine
+
+# Create virtual environment
+python -m venv .venv && source .venv/bin/activate
+
+# Install (runtime deps)
+pip install -r requirements.txt
+pip install -e .
+
+# Train TD3 with default config
+python scripts/train.py --config configs/default.yaml
+
+# Evaluate a saved checkpoint
+python scripts/evaluate.py \
+  --config configs/default.yaml \
+  --checkpoint checkpoints/td3_final.pt \
+  --n_episodes 20
+```
+
+### Option B — Docker (recommended for production)
+
+```bash
+# Build the image
+docker build -t rl-hedging-engine:latest .
+
+# Run training (checkpoints persist to ./checkpoints)
+docker run --rm \
+  -v $(pwd)/checkpoints:/app/checkpoints \
+  -v $(pwd)/logs:/app/logs \
+  rl-hedging-engine:latest
+
+# Or use Docker Compose (train + TensorBoard)
+docker compose up train tensorboard
+# TensorBoard available at http://localhost:6006
+```
+
+### Option C — Development install
+
+```bash
 pip install -e ".[dev]"
-
-# Sanity check the environment
-python scripts/run_env_sanity.py
-
-# Run Black-Scholes + no-hedge baselines
-python scripts/run_baselines.py --config configs/experiment/ppo_vs_baselines.yaml
-
-# Train PPO
-python scripts/train_ppo.py --config configs/agent/ppo_default.yaml
-
-# Train TD3
-python scripts/train_td3.py --config configs/agent/td3default.yaml
-
-# Full benchmark across all strategies
-python scripts/run_benchmark.py --config configs/experiment/cost_sweep.yaml
+pytest tests/ -v              # run test suite
+ruff check src/ scripts/      # lint
+mypy src/                     # type-check
 ```
 
-### Run tests
+---
+
+## Configuration
+
+All experiment parameters live in `configs/default.yaml`. Override any field at the CLI:
+
 ```bash
-pytest tests/ -v
-pytest tests/test_blackscholes.py tests/test_gbm.py tests/test_hedging_env.py -q
+python scripts/train.py \
+  --config configs/default.yaml \
+  --override training.algorithm=ppo \
+  --override environment.transaction_cost=0.005
 ```
+
+Key sections:
+
+| Section | Key parameters |
+|---|---|
+| `simulation` | `s0`, `mu`, `sigma`, `dt`, `n_steps`, `n_paths` |
+| `option` | `strike`, `maturity`, `r` |
+| `environment` | `transaction_cost`, `risk_aversion` |
+| `training` | `algorithm`, `total_episodes`, `save_freq` |
+| `model` | `hidden_sizes`, `lr` |
 
 ---
 
-## Milestones
+## Technical Design
 
-| # | Deliverable | Risk Retired |
+### Environment
+
+`HedgingEnv` is a `gymnasium.Env` wrapping a discrete-time option hedging problem:
+- **State**: `[S/K, time-to-expiry, current_delta, prev_hedge, step_pnl, realised_vol]`
+- **Action**: continuous hedge ratio `∈ [0, 1]`
+- **Reward**: `step_pnl − λ · transaction_cost − α · variance_penalty`
+- **Terminal**: episode ends at option expiry
+
+### Agents
+
+| Agent | Type | Key features |
 |---|---|---|
-| M0 | Scaffold, pricing, GBM simulation | — |
-| M1 | Hedging env, ledger, costs, rewards, sanity tests | Financial accounting correctness |
-| M2 | No-hedge + delta-hedge baselines, backtest plots | Benchmark validity |
-| M3 | PPO training, logging, learned-position-vs-delta diagnostic | RL learnability |
-| M4 | TD3 agent, friction stress tests, 5-seed stability | Continuous-control robustness |
-| M5 | Full eval suite, cost-risk frontier, README, refactor | Research usability |
+| **PPO** | On-policy actor-critic | GAE advantage, clipped surrogate loss, entropy regularisation |
+| **TD3** | Off-policy actor-critic | Twin critics, delayed policy updates, target policy smoothing |
 
-### Acceptance criteria at M2 (validates the entire stack before any RL)
-- Delta-hedge PnL std < no-hedge PnL std
-- Std shrinks by ~√2 per doubling of rebalance frequency (O(√dt) discrete hedging law)
-- Delta-hedge mean PnL ≈ 0 even when μ ≠ r (drift immunity)
-- No-hedge mean PnL matches closed-form E[payoff] under P
+### Evaluation
+
+All metrics computed over common random number (CRN) paths for paired statistical tests:
+- Total P&L distribution (mean, std, CVaR-95)
+- Hedge error vs. Black-Scholes delta
+- Transaction cost breakdown
+- Sharpe ratio
 
 ---
 
-## Math Reference
+## Deployment
 
-### Black-Scholes pricing
-```
-d1 = (ln(S/K) + (r + 0.5σ²)τ) / (σ√τ)
-d2 = d1 - σ√τ
-Call = S·N(d1) - K·e^{-rτ}·N(d2)
-Put  = K·e^{-rτ}·N(-d2) - S·N(-d1)
-Δ_call = N(d1),   Δ_put = N(d1) - 1
-Γ = N'(d1) / (S·σ·√τ)   [same for calls and puts]
-```
-Numerical edge cases: τ → 0 price → intrinsic, Δ → indicator, Γ/ν → 0. We floor τ at 1e-8 years and document the ATM-at-expiry ambiguity (we pick Δ = 0.5).
+### Docker
 
-### GBM exact scheme
-```
-S(t+dt) = S(t) · exp((μ - 0.5σ²)dt + σ√dt · Z),  Z ~ N(0,1)
-```
-Using the exact transition density — no Euler discretization bias. The dt only controls rebalancing frequency, not simulation accuracy.
+The `Dockerfile` uses a **two-stage build**:
+1. **Builder stage** — installs all dependencies into an isolated venv
+2. **Runtime stage** — copies only the venv + source, runs as a non-root user
 
-### CVaR (Expected Shortfall)
-```
-Loss convention: L = -PnL
-VaR_α = α-quantile of L
-CVaR_α = E[L | L ≥ VaR_α]
-```
-Sign convention is explicit in the metrics module to prevent the most common bug in risk code.
+This keeps the final image lean and secure.
 
----
+### Docker Compose Services
 
-## Dependencies
+| Service | Description | Port |
+|---|---|---|
+| `train` | Runs a full training episode, writes checkpoints and logs | — |
+| `evaluate` | Loads a checkpoint and prints evaluation metrics | — |
+| `tensorboard` | Serves training curves via TensorBoard | `6006` |
 
-**Core**: `torch`, `gymnasium`, `numpy`, `scipy`, `pandas`, `pyyaml`, `pydantic`
+### CI/CD (GitHub Actions)
 
-**Dev**: `pytest`, `pytest-cov`, `ruff`, `mypy`, `tensorboard`
-
-Deliberately excludes `stable-baselines3` as a core dependency — custom implementations keep the algorithms fully inspectable and modifiable. SB3 is available as an optional cross-check.
+Every push to `main` and every pull request triggers:
+1. **Lint** — `ruff` style check + `mypy` type checking
+2. **Test** — `pytest` on Python 3.11 and 3.12 with coverage upload
+3. **Docker** — builds the image to verify `Dockerfile` integrity
 
 ---
 
@@ -248,4 +219,4 @@ Deliberately excludes `stable-baselines3` as a core dependency — custom implem
 
 ## License
 
-MIT © Grisheet
+MIT © 2026 Grisheet. See [LICENSE](LICENSE) for full terms.
