@@ -35,7 +35,7 @@ jobs:
 
       - name: Install dev dependencies
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip setuptools
           pip install ruff mypy
           pip install -r requirements.txt
           pip install -e . --no-deps
@@ -67,7 +67,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip setuptools
           pip install -r requirements.txt
           pip install pytest pytest-cov
           pip install -e . --no-deps
