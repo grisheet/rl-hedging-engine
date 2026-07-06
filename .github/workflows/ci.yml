@@ -1,0 +1,111 @@
+# =============================================================================
+# rl-hedging-engine — Continuous Integration
+# Runs on every push to main and every pull request.
+# Jobs:
+#   lint     — ruff + mypy static analysis
+#   test     — pytest with coverage report
+#   docker   — builds the Docker image to verify Dockerfile integrity
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint & Type-check
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff mypy
+          pip install -r requirements.txt
+          pip install -e . --no-deps
+
+      - name: Run ruff linter
+        run: ruff check src/ scripts/ tests/
+
+      - name: Run mypy type-checker
+        run: mypy src/ --ignore-missing-imports
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Unit Tests + Coverage
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+          pip install -e . --no-deps
+
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/ \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            -v
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.11'
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Docker Build
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: rl-hedging-engine:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
